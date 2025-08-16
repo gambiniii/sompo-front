@@ -13,10 +13,6 @@ const ssoApi = axios.create({
   baseURL: import.meta.env.VITE_SSO_URL,
 });
 
-const passportApi = axios.create({
-  baseURL: import.meta.env.VITE_PASSPORT_URL,
-});
-
 addTokenToRequest(sompoApi);
 
-export { sompoApiWithoutToken, sompoApi, ssoApi, passportApi };
+export { sompoApiWithoutToken, sompoApi, ssoApi };
