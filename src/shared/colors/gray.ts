@@ -1,0 +1,7 @@
+export enum Gray {
+  BASE = '#000',
+  SILVER_SAND = '#C2C2C2',
+  BACKGROUND_SIDEBAR_GRAY = '#EEEEEE',
+  TEXTFIELD_GRAY = '#F2F4F9',
+  BORDER_GRAY = '#DDDDDD',
+}
