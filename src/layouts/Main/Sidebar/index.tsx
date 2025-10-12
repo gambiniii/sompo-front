@@ -1,4 +1,4 @@
-import { DashboardOutlined, Public, Settings } from '@mui/icons-material';
+import { DashboardOutlined, Public } from '@mui/icons-material';
 import {
   Container,
   IconContainer,
@@ -25,8 +25,7 @@ export const Sidebar = () => {
       icon: <DashboardOutlined />,
       pathname: ROUTES.DASHBOARD,
     },
-    { name: 'Areas', icon: <Public />, pathname: ROUTES.AREAS },
-    { name: 'Parâmetros', icon: <Settings />, pathname: ROUTES.PARAMETERS },
+    { name: 'Predição', icon: <Public />, pathname: ROUTES.ASSESSMENT },
   ];
 
   const closeSidebar = () => {

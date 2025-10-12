@@ -1,5 +1,5 @@
 export const ROUTES = {
   DASHBOARD: '/dashboard',
-  AREAS: '/areas',
+  ASSESSMENT: '/assessment',
   PARAMETERS: '/parameters',
 };

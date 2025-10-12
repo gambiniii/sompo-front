@@ -39,9 +39,6 @@ export const SidebarLink = styled(Link, {
   textDecoration: "none",
   gap: "12px",
   borderRadius: "8px",
-  ":hover": {
-    backgroundColor: Gray.BACKGROUND_SIDEBAR_GRAY,
-  },
 }));
 
 export const MenuOpenIcon = styled(MenuOpen)({
