@@ -1,5 +1,5 @@
-import { Box, CardContent, Typography, LinearProgress } from '@mui/material';
-import { Search as SearchIcon, Schedule, TravelExplore } from '@mui/icons-material';
+import { Box, CardContent, Typography, LinearProgress, MenuItem, Select, FormControl, InputLabel } from '@mui/material';
+import { Search as SearchIcon, Schedule, TravelExplore, LocalShipping } from '@mui/icons-material';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { StyledCard, StyledButton } from '../styles';
 import { Red } from '@/shared/colors/red';
@@ -8,15 +8,33 @@ import { White } from '@/shared/colors/white';
 interface TripConfigCardProps {
   departureDate: Date | null;
   setDepartureDate: (date: Date | null) => void;
+  cargoType: string;
+  setCargoType: (type: string) => void;
   handleSearchRoute: () => void;
   isLoading: boolean;
   from: string;
   to: string;
 }
 
+const CARGO_TYPES = [
+  'Cargas Fracionadas',
+  'Cigarros',
+  'Medicamentos',
+  'Alimentício',
+  'Eletroeletrônicos',
+  'Peças/Autopeças',
+  'Higiene/Cosmético',
+  'Produto p/ Saúde',
+  'Minérios',
+  'Agrícola',
+  'Bebidas',
+];
+
 export const TripConfigCard = ({
   departureDate,
   setDepartureDate,
+  cargoType,
+  setCargoType,
   handleSearchRoute,
   isLoading,
   from,
@@ -38,6 +56,37 @@ export const TripConfigCard = ({
           <Typography variant="h6" fontWeight={700} color={Red.DARK} fontSize="1rem">
             Configuração da Viagem
           </Typography>
+        </Box>
+
+        <Box sx={{ mb: 2.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+            <LocalShipping sx={{ color: Red.BASE, fontSize: '1rem' }} />
+            <Typography variant="subtitle2" fontWeight={600} color={Red.DARK} fontSize="0.85rem">
+              Tipo de carga
+            </Typography>
+          </Box>
+          <FormControl fullWidth size="medium">
+            <InputLabel sx={{ '&.Mui-focused': { color: Red.BASE } }}>Tipo de Carga</InputLabel>
+            <Select
+              value={cargoType}
+              label="Tipo de Carga"
+              onChange={(e) => setCargoType(e.target.value)}
+              sx={{
+                '&:hover .MuiOutlinedInput-notchedOutline': {
+                  borderColor: Red.MEDIUM,
+                },
+                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                  borderColor: Red.BASE,
+                },
+              }}
+            >
+              {CARGO_TYPES.map((type) => (
+                <MenuItem key={type} value={type}>
+                  {type}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
         </Box>
 
         <Box sx={{ mb: 2.5 }}>

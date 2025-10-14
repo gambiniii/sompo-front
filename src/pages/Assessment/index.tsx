@@ -23,6 +23,7 @@ export const AssessmentComponent = () => {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [departureDate, setDepartureDate] = useState<Date | null>(null);
+  const [cargoType, setCargoType] = useState('Cargas Fracionadas');
   const [routeGeoJSON, setRouteGeoJSON] = useState<GeoJSON.Feature | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [riskAssessment, setRiskAssessment] = useState<{
@@ -105,19 +106,17 @@ export const AssessmentComponent = () => {
           route: routeCoordinates,
           expected_hour: expectedHour,
           weekday: weekday,
+          cargo_type: cargoType,
         });
 
-        const averageRiskPercentage = riskResponse.average_normalized
-          ? riskResponse.average_normalized * 100
-          : riskResponse.results.reduce(
-              (sum: number, result: any) => sum + (result.risk_percentage || 0),
-              0,
-            ) / riskResponse.results.length;
+        // Converter risk_score (0-1) para porcentagem (0-100)
+        const riskScorePercentage = riskResponse.risk_score * 100;
 
+        // Mapear categoria da API para formato do front
         let riskLevel: 'low' | 'medium' | 'high';
-        if (averageRiskPercentage <= 30) {
+        if (riskResponse.risk_category === 'BAIXO') {
           riskLevel = 'low';
-        } else if (averageRiskPercentage <= 70) {
+        } else if (riskResponse.risk_category === 'MÉDIO') {
           riskLevel = 'medium';
         } else {
           riskLevel = 'high';
@@ -125,48 +124,44 @@ export const AssessmentComponent = () => {
 
         const riskFactors = [];
 
-        // Analisa confiabilidade
-        if (riskResponse.confidence < 0.7) {
-          riskFactors.push('Baixa confiabilidade dos dados');
-        } else if (riskResponse.confidence >= 0.9) {
-          riskFactors.push('Alta confiabilidade dos dados');
+        // Fatores baseados na resposta da API
+        riskFactors.push(`Categoria: ${riskResponse.risk_category}`);
+        riskFactors.push(`Tipo de carga: ${riskResponse.cargo_type}`);
+
+        if (riskResponse.cargo_factor > 0) {
+          riskFactors.push(`Fator de risco da carga: +${(riskResponse.cargo_factor * 100).toFixed(1)}%`);
         }
 
-        // Analisa quantidade de pontos
-        if (riskResponse.points_analyzed < 10) {
-          riskFactors.push('Poucos pontos analisados');
-        } else if (riskResponse.points_analyzed >= 30) {
-          riskFactors.push(`${riskResponse.points_analyzed} pontos analisados`);
-        }
+        riskFactors.push(`Distância: ${riskResponse.route_length_km.toFixed(1)} km`);
 
-        // Encontra pontos de maior risco
-        const highRiskPoints = riskResponse.results.filter(
-          (point: any) => point.risk_percentage > 80,
-        );
-        if (highRiskPoints.length > 0) {
-          riskFactors.push(`${highRiskPoints.length} ponto(s) de alto risco identificado(s)`);
-        }
-
-        // Fatores baseados no nível de risco geral
-        if (averageRiskPercentage > 80) {
-          riskFactors.push('Rota de alto risco');
-          riskFactors.push('Evitar se possível');
-        } else if (averageRiskPercentage > 60) {
-          riskFactors.push('Risco elevado na rota');
-          riskFactors.push('Considere horários alternativos');
-        } else if (averageRiskPercentage > 40) {
-          riskFactors.push('Risco moderado identificado');
-          riskFactors.push('Mantenha-se alerta');
-        } else if (averageRiskPercentage > 20) {
-          riskFactors.push('Risco baixo a moderado');
+        // Analisa segmentos críticos
+        if (riskResponse.critical_segments.length > 0) {
+          riskFactors.push(`${riskResponse.critical_segments.length} ponto(s) crítico(s) identificado(s)`);
         } else {
-          riskFactors.push('Rota segura');
-          riskFactors.push('Baixo risco de incidentes');
+          riskFactors.push('Nenhum ponto crítico identificado');
+        }
+
+        // Analisa risco espacial
+        if (riskResponse.spatial_risk_max > 0.8) {
+          riskFactors.push('Áreas de alto risco na rota');
+        } else if (riskResponse.spatial_risk_max > 0.5) {
+          riskFactors.push('Risco moderado em alguns trechos');
+        } else {
+          riskFactors.push('Baixo risco espacial');
+        }
+
+        // Analisa multiplicador temporal
+        if (riskResponse.temporal_multiplier > 1.5) {
+          riskFactors.push('Horário de alto risco');
+        } else if (riskResponse.temporal_multiplier > 1.0) {
+          riskFactors.push('Horário de risco moderado');
+        } else {
+          riskFactors.push('Horário favorável');
         }
 
         const assessment = {
           level: riskLevel,
-          percentage: Math.round(averageRiskPercentage),
+          percentage: Math.round(riskScorePercentage),
           factors: riskFactors,
         };
 
@@ -276,6 +271,8 @@ export const AssessmentComponent = () => {
           <TripConfigCard
             departureDate={departureDate}
             setDepartureDate={setDepartureDate}
+            cargoType={cargoType}
+            setCargoType={setCargoType}
             handleSearchRoute={handleSearchRoute}
             isLoading={isLoading}
             from={from}
