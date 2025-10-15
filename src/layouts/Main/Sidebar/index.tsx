@@ -1,4 +1,4 @@
-import { DashboardOutlined, Public } from '@mui/icons-material';
+import { DashboardOutlined, Public, LocalShipping } from '@mui/icons-material';
 import {
   Container,
   IconContainer,
@@ -26,6 +26,7 @@ export const Sidebar = () => {
       pathname: ROUTES.DASHBOARD,
     },
     { name: 'Predição', icon: <Public />, pathname: ROUTES.ASSESSMENT },
+    { name: 'Tipos de Carga', icon: <LocalShipping />, pathname: ROUTES.CARGO_TYPES },
   ];
 
   const closeSidebar = () => {

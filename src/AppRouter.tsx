@@ -4,6 +4,7 @@ import { MainLayout } from './layouts/Main';
 import { AuthLayout } from './layouts/Auth';
 import { DashboardComponent } from './pages/Dashboard';
 import { AssessmentComponent } from './pages/Assessment';
+import { CargoTypesComponent } from './pages/CargoTypes';
 import LoginPage from './pages/Login';
 
 export const AppRouter = () => {
@@ -20,6 +21,10 @@ export const AppRouter = () => {
 
         <Route element={<MainLayout />}>
           <Route path={ROUTES.ASSESSMENT} element={<AssessmentComponent />} />
+        </Route>
+
+        <Route element={<MainLayout />}>
+          <Route path={ROUTES.CARGO_TYPES} element={<CargoTypesComponent />} />
         </Route>
 
         {/* <Route element={<ProtectedRoute />}>

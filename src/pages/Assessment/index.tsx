@@ -8,10 +8,13 @@ import '@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css';
 import { toast } from 'react-toastify';
 import { Box } from '@mui/material';
 import { RouteInfoCard } from './RouteInfoCard';
-import { RiskAssessmentCard } from './RiskAssessmentCard';
+import { TheftRiskCard } from './TheftRiskCard';
+import { AccidentRiskCard } from './AccidentRiskCard';
+import { WeatherCard } from './WeatherCard';
 import { TripConfigCard } from './TripConfigCard';
 import { MapComponent } from './MapComponent';
-import { assessRiskOnRoute } from '@/shared/http/sompo-api/assessment/assess-risk-on-route.request';
+import { assessSeparatedRisk, SeparatedRiskResponse } from '@/shared/http/sompo-api/assessment/assess-separated-risk.request';
+import { getWeatherForRoute } from '@/shared/services/weather.service';
 import { SP_CENTER } from '@/shared/config/sp_center';
 
 export const AssessmentComponent = () => {
@@ -23,14 +26,16 @@ export const AssessmentComponent = () => {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [departureDate, setDepartureDate] = useState<Date | null>(null);
-  const [cargoType, setCargoType] = useState('Cargas Fracionadas');
+  const [cargoType, setCargoType] = useState('');
   const [routeGeoJSON, setRouteGeoJSON] = useState<GeoJSON.Feature | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [riskAssessment, setRiskAssessment] = useState<{
-    level: 'low' | 'medium' | 'high';
-    percentage: number;
-    factors: string[];
-  } | null>(null);
+
+  // Estados para os 3 tipos de dados
+  const [theftRisk, setTheftRisk] = useState<SeparatedRiskResponse['theft_risk'] | null>(null);
+  const [accidentRisk, setAccidentRisk] = useState<SeparatedRiskResponse['accident_risk'] | null>(null);
+  const [weather, setWeather] = useState<{ main: string; description: string; temp: number; icon: string } | null>(null);
+  const [recommendations, setRecommendations] = useState<string[]>([]);
+
   const [routeInfo, setRouteInfo] = useState<{
     distance: string;
     duration: string;
@@ -44,7 +49,7 @@ export const AssessmentComponent = () => {
     setMainHexagon(mainCell);
     const ringCells = gridDisk(mainCell, 4);
     setHexagons([mainCell, ...ringCells]);
-  }, [SP_CENTER.latitude, SP_CENTER.longitude]);
+  }, []);
 
   const handleSearchRoute = async () => {
     if (!from || !to) {
@@ -52,17 +57,26 @@ export const AssessmentComponent = () => {
       return;
     }
 
+    if (!cargoType) {
+      toast.error('Selecione um tipo de carga.');
+      return;
+    }
+
     setIsLoading(true);
-    setRiskAssessment(null);
+    setTheftRisk(null);
+    setAccidentRisk(null);
+    setWeather(null);
     setRouteInfo(null);
+    setRecommendations([]);
 
     try {
-      const loadingToastId = toast.loading('Analisando rota, aguarde...', {
+      const loadingToastId = toast.loading('Analisando rota e condições climáticas...', {
         autoClose: false,
         closeOnClick: false,
         draggable: false,
       });
 
+      // 1. Buscar rota do Mapbox
       const response = await axios.get(
         `https://api.mapbox.com/directions/v5/mapbox/driving/${from};${to}?geometries=geojson&access_token=${
           import.meta.env.VITE_MAPBOX_TOKEN
@@ -84,142 +98,100 @@ export const AssessmentComponent = () => {
         estimatedCost: `R$ ${estimatedCost}`,
       });
 
+      // Ajustar mapa
       const mapInstance = mapRef.current?.getMap();
-      if (!mapInstance) return;
-      const coords: [number, number][] = route.coordinates;
-      const bounds = coords.reduce(
-        (b: mapboxgl.LngLatBounds, coord: [number, number]) => b.extend(coord),
-        new mapboxgl.LngLatBounds(coords[0], coords[0]),
-      );
-      mapInstance.fitBounds(bounds, { padding: 50 });
+      if (mapInstance) {
+        const coords: [number, number][] = route.coordinates;
+        const bounds = coords.reduce(
+          (b: mapboxgl.LngLatBounds, coord: [number, number]) => b.extend(coord),
+          new mapboxgl.LngLatBounds(coords[0], coords[0]),
+        );
+        mapInstance.fitBounds(bounds, { padding: 50 });
+      }
+
+      // 2. Processar coordenadas (converter de [lng, lat] para [lat, lng])
+      const routeCoordinates = route.coordinates.map((coord: [number, number]) => [
+        coord[1],
+        coord[0],
+      ]);
+
+      const expectedHour = departureDate ? departureDate.getHours() : new Date().getHours();
+      const weekday = departureDate ? departureDate.getDay() : new Date().getDay();
+
+      // 3. Buscar clima
+      toast.update(loadingToastId, {
+        render: 'Consultando condições climáticas...',
+      });
+
+      let weatherData = null;
+      let weatherCondition = null;
 
       try {
-        const routeCoordinates = route.coordinates.map((coord: [number, number]) => [
-          coord[1],
-          coord[0],
-        ]);
+        const weatherResult = await getWeatherForRoute(routeCoordinates, departureDate || undefined);
+        weatherData = weatherResult.raw;
+        weatherCondition = weatherResult.modelFormat;
+        setWeather(weatherData);
+        console.log('Clima obtido:', weatherResult);
+      } catch (error) {
+        console.error('Erro ao buscar clima:', error);
+        toast.warning('Não foi possível obter dados climáticos. Continuando sem informação de clima.');
+      }
 
-        const expectedHour = departureDate ? departureDate.getHours() : new Date().getHours();
-        const weekday = departureDate ? departureDate.getDay() : new Date().getDay();
+      // 4. Chamar endpoint combinado
+      toast.update(loadingToastId, {
+        render: 'Analisando riscos de roubo e acidentes...',
+      });
 
-        const riskResponse = await assessRiskOnRoute({
+      try {
+        const combinedResponse = await assessSeparatedRisk({
           route: routeCoordinates,
           expected_hour: expectedHour,
           weekday: weekday,
           cargo_type: cargoType,
+          weather_condition: weatherCondition || undefined,
         });
 
-        // Converter risk_score (0-1) para porcentagem (0-100)
-        const riskScorePercentage = riskResponse.risk_score * 100;
+        console.log('Resposta combinada:', combinedResponse);
 
-        // Mapear categoria da API para formato do front
-        let riskLevel: 'low' | 'medium' | 'high';
-        if (riskResponse.risk_category === 'BAIXO') {
-          riskLevel = 'low';
-        } else if (riskResponse.risk_category === 'MÉDIO') {
-          riskLevel = 'medium';
-        } else {
-          riskLevel = 'high';
-        }
+        setTheftRisk(combinedResponse.theft_risk);
+        setAccidentRisk(combinedResponse.accident_risk);
+        setRecommendations(combinedResponse.recommendations);
 
-        const riskFactors = [];
-
-        // Fatores baseados na resposta da API
-        riskFactors.push(`Categoria: ${riskResponse.risk_category}`);
-        riskFactors.push(`Tipo de carga: ${riskResponse.cargo_type}`);
-
-        if (riskResponse.cargo_factor > 0) {
-          riskFactors.push(`Fator de risco da carga: +${(riskResponse.cargo_factor * 100).toFixed(1)}%`);
-        }
-
-        riskFactors.push(`Distância: ${riskResponse.route_length_km.toFixed(1)} km`);
-
-        // Analisa segmentos críticos
-        if (riskResponse.critical_segments.length > 0) {
-          riskFactors.push(`${riskResponse.critical_segments.length} ponto(s) crítico(s) identificado(s)`);
-        } else {
-          riskFactors.push('Nenhum ponto crítico identificado');
-        }
-
-        // Analisa risco espacial
-        if (riskResponse.spatial_risk_max > 0.8) {
-          riskFactors.push('Áreas de alto risco na rota');
-        } else if (riskResponse.spatial_risk_max > 0.5) {
-          riskFactors.push('Risco moderado em alguns trechos');
-        } else {
-          riskFactors.push('Baixo risco espacial');
-        }
-
-        // Analisa multiplicador temporal
-        if (riskResponse.temporal_multiplier > 1.5) {
-          riskFactors.push('Horário de alto risco');
-        } else if (riskResponse.temporal_multiplier > 1.0) {
-          riskFactors.push('Horário de risco moderado');
-        } else {
-          riskFactors.push('Horário favorável');
-        }
-
-        const assessment = {
-          level: riskLevel,
-          percentage: Math.round(riskScorePercentage),
-          factors: riskFactors,
-        };
-
-        setRiskAssessment(assessment);
         setIsLoading(false);
 
+        // Determinar tipo de toast baseado no risco geral
+        const overallCategory = combinedResponse.overall_risk_category;
+        const toastType =
+          overallCategory === 'BAIXO'
+            ? 'success'
+            : overallCategory === 'MÉDIO'
+            ? 'info'
+            : overallCategory === 'ALTO'
+            ? 'warning'
+            : 'error';
+
         toast.update(loadingToastId, {
-          render: `Análise concluída! Risco: ${assessment.percentage}%`,
-          type:
-            assessment.level === 'low'
-              ? 'success'
-              : assessment.level === 'medium'
-              ? 'warning'
-              : 'error',
+          render: `Análise concluída! Risco geral: ${overallCategory}`,
+          type: toastType,
           isLoading: false,
           autoClose: 5000,
           closeOnClick: true,
           draggable: true,
         });
-      } catch (riskError) {
+      } catch (riskError: any) {
         console.error('Erro na análise de risco:', riskError);
         setIsLoading(false);
+
         toast.update(loadingToastId, {
-          render: 'Erro na análise de risco. Usando dados simulados.',
-          type: 'warning',
+          render: `Erro ao analisar riscos: ${riskError.response?.data?.detail || riskError.message}`,
+          type: 'error',
           isLoading: false,
-          autoClose: 3000,
+          autoClose: 5000,
           closeOnClick: true,
           draggable: true,
         });
-
-        // Fallback para simulação
-        const riskLevel = Math.random();
-        let assessment: typeof riskAssessment;
-
-        if (riskLevel < 0.3) {
-          assessment = {
-            level: 'low',
-            percentage: Math.floor(Math.random() * 30 + 10),
-            factors: ['Região segura', 'Horário adequado', 'Rota conhecida'],
-          };
-        } else if (riskLevel < 0.7) {
-          assessment = {
-            level: 'medium',
-            percentage: Math.floor(Math.random() * 40 + 30),
-            factors: ['Tráfego moderado', 'Área comercial', 'Horário de pico'],
-          };
-        } else {
-          assessment = {
-            level: 'high',
-            percentage: Math.floor(Math.random() * 30 + 70),
-            factors: ['Alta criminalidade', 'Região de risco', 'Horário noturno'],
-          };
-        }
-
-        setRiskAssessment(assessment);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao buscar rota:', error);
       setIsLoading(false);
       toast.error('Não foi possível processar a rota.');
@@ -229,7 +201,7 @@ export const AssessmentComponent = () => {
   return (
     <Box
       sx={{
-        height: 'calc(100vh - 75px)', // Altura total menos header
+        height: 'calc(100vh - 75px)',
         margin: '-35px -80px',
         background: `linear-gradient(135deg, #FEF2F2 0%, #FFFFFF 25%, #FEF2F2 75%, #FFFFFF 100%)`,
         position: 'relative',
@@ -247,18 +219,18 @@ export const AssessmentComponent = () => {
         },
       }}
     >
-      {/* Layout em 3 colunas para melhor aproveitamento */}
+      {/* Layout em grid: Config + Weather | Theft | Accident | Map */}
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: '280px 280px 1fr',
+          gridTemplateColumns: '280px 280px 280px 1fr',
           gridTemplateRows: '1fr',
           height: '100%',
           gap: 2,
           p: 2,
         }}
       >
-        {/* Coluna 1: Config + Info da Rota */}
+        {/* Coluna 1: Config + Clima */}
         <Box
           sx={{
             display: 'flex',
@@ -279,20 +251,32 @@ export const AssessmentComponent = () => {
             to={to}
           />
 
+          <WeatherCard weather={weather} />
+
           <RouteInfoCard routeInfo={routeInfo} />
         </Box>
 
-        {/* Coluna 2: Análise de Risco */}
+        {/* Coluna 2: Risco de Roubo */}
         <Box
           sx={{
             height: '100%',
-            overflow: 'hidden',
+            overflow: 'auto',
           }}
         >
-          <RiskAssessmentCard riskAssessment={riskAssessment} />
+          <TheftRiskCard theftRisk={theftRisk} />
         </Box>
 
-        {/* Coluna 3: Mapa (maior) */}
+        {/* Coluna 3: Risco de Acidente */}
+        <Box
+          sx={{
+            height: '100%',
+            overflow: 'auto',
+          }}
+        >
+          <AccidentRiskCard accidentRisk={accidentRisk} />
+        </Box>
+
+        {/* Coluna 4: Mapa (maior) */}
         <Box
           sx={{
             height: '100%',
@@ -312,6 +296,32 @@ export const AssessmentComponent = () => {
           />
         </Box>
       </Box>
+
+      {/* Recomendações (opcional, pode adicionar depois) */}
+      {recommendations.length > 0 && (
+        <Box
+          sx={{
+            position: 'absolute',
+            bottom: 16,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            maxWidth: '80%',
+            background: 'white',
+            p: 2,
+            borderRadius: '12px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            border: '2px solid #EF4444',
+          }}
+        >
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+            {recommendations.map((rec, idx) => (
+              <Box key={idx} sx={{ fontSize: '0.85rem', color: '#991b1b' }}>
+                {rec}
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      )}
     </Box>
   );
 };

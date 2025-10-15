@@ -1,9 +1,12 @@
-import { Box, CardContent, Typography, LinearProgress, MenuItem, Select, FormControl, InputLabel } from '@mui/material';
+import { Box, CardContent, Typography, LinearProgress, MenuItem, Select, FormControl, InputLabel, CircularProgress } from '@mui/material';
 import { Search as SearchIcon, Schedule, TravelExplore, LocalShipping } from '@mui/icons-material';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { StyledCard, StyledButton } from '../styles';
 import { Red } from '@/shared/colors/red';
 import { White } from '@/shared/colors/white';
+import { useEffect, useState } from 'react';
+import { getCargoTypes } from '@/shared/http/sompo-api/cargo-type';
+import { CargoType } from '@/shared/interfaces/areas/cargo-type.interface';
 
 interface TripConfigCardProps {
   departureDate: Date | null;
@@ -16,20 +19,6 @@ interface TripConfigCardProps {
   to: string;
 }
 
-const CARGO_TYPES = [
-  'Cargas Fracionadas',
-  'Cigarros',
-  'Medicamentos',
-  'Alimentício',
-  'Eletroeletrônicos',
-  'Peças/Autopeças',
-  'Higiene/Cosmético',
-  'Produto p/ Saúde',
-  'Minérios',
-  'Agrícola',
-  'Bebidas',
-];
-
 export const TripConfigCard = ({
   departureDate,
   setDepartureDate,
@@ -40,6 +29,29 @@ export const TripConfigCard = ({
   from,
   to,
 }: TripConfigCardProps) => {
+  const [cargoTypes, setCargoTypes] = useState<CargoType[]>([]);
+  const [loadingCargoTypes, setLoadingCargoTypes] = useState(true);
+
+  useEffect(() => {
+    const loadCargoTypes = async () => {
+      try {
+        const data = await getCargoTypes();
+        setCargoTypes(data);
+
+        // Se não há tipo selecionado e existem tipos disponíveis, seleciona o primeiro
+        if (!cargoType && data.length > 0) {
+          setCargoType(data[0].descricao);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar tipos de carga:', error);
+      } finally {
+        setLoadingCargoTypes(false);
+      }
+    };
+
+    loadCargoTypes();
+  }, []);
+
   return (
     <StyledCard sx={{ position: 'relative', overflow: 'hidden', height: 'fit-content' }}>
       <CardContent sx={{ p: 2 }}>
@@ -71,6 +83,7 @@ export const TripConfigCard = ({
               value={cargoType}
               label="Tipo de Carga"
               onChange={(e) => setCargoType(e.target.value)}
+              disabled={loadingCargoTypes}
               sx={{
                 '&:hover .MuiOutlinedInput-notchedOutline': {
                   borderColor: Red.MEDIUM,
@@ -80,11 +93,20 @@ export const TripConfigCard = ({
                 },
               }}
             >
-              {CARGO_TYPES.map((type) => (
-                <MenuItem key={type} value={type}>
-                  {type}
+              {loadingCargoTypes ? (
+                <MenuItem disabled>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <CircularProgress size={16} />
+                    <Typography variant="body2">Carregando...</Typography>
+                  </Box>
                 </MenuItem>
-              ))}
+              ) : (
+                cargoTypes.map((type) => (
+                  <MenuItem key={type.id} value={type.descricao}>
+                    {type.descricao} ({type.categoria})
+                  </MenuItem>
+                ))
+              )}
             </Select>
           </FormControl>
         </Box>
@@ -130,7 +152,7 @@ export const TripConfigCard = ({
           size="small"
           startIcon={<SearchIcon />}
           onClick={handleSearchRoute}
-          disabled={isLoading || !from || !to}
+          disabled={isLoading || !from || !to || !cargoType}
           sx={{
             py: 1.25,
             fontSize: '0.9rem',
